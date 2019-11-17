@@ -1,0 +1,60 @@
+# This code is licensed from CircleCI to the user under the MIT license. See
+# https://circleci.com/orbs/registry/licensing for details.
+version: 2.1
+
+executors:
+  dockerexecutor:
+    docker:
+      - image: docker:18.09.6
+
+commands:
+
+jobs:
+  build_and_push:
+    parameters:
+      aws_access_key_id:
+        type: string
+      aws_secret_access_key:
+        type: string
+      aws_default_region:
+        type: string
+      docker_repository_prefix:
+        type: string
+      image_name:
+        type: string
+      image_tag:
+        type: string
+      dockerfile:
+        type: string
+        default: Dockerfile
+      working_directory:
+        type: string
+        default: .
+    executor: dockerexecutor
+    steps:
+      - run:
+          name: install required packages
+          command: |
+            apk add ca-certificates python3 > /dev/null 2>&1
+            pip3 install awscli --upgrade --user > /dev/null 2>&1
+      - checkout
+      - setup_remote_docker
+      - run:
+          name: setup ECR
+          command: |
+            export AWS_SECRET_ACCESS_KEY="<< parameters.aws_secret_access_key >>"
+            export AWS_ACCESS_KEY_ID="<< parameters.aws_access_key_id >>"
+            export AWS_DEFAULT_REGION="<< parameters.aws_default_region >>"
+            export PATH=$PATH:/root/.local/bin/
+            aws ecr create-repository --repository-name << parameters.image_name >> || true
+            eval $(aws ecr get-login --no-include-email)
+      - run:
+          name: build docker image
+          working_directory: << parameters.working_directory >>
+          command: |
+            docker build -t << parameters.image_name >>:<< parameters.image_tag >> -f << parameters.dockerfile >> .
+            docker tag << parameters.image_name >>:<< parameters.image_tag >> << parameters.docker_repository_prefix >>/<< parameters.image_name >>:<< parameters.image_tag >>
+      - run:
+          name: push docker image
+          command: |
+            docker push << parameters.docker_repository_prefix >>/<< parameters.image_name >>:<< parameters.image_tag >>
